@@ -3,6 +3,8 @@ pandas==3.0.5
 numpy==2.5.3
 pyarrow==25.0.1
 scikit-learn==1.9.1
-catboost==1.2.10
+scipy==1.18.1
+ngboost==0.5.11
+shap==0.54.1
 matplotlib==3.11.2
 streamlit==1.66.1

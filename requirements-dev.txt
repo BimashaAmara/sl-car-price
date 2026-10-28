@@ -1,9 +1,7 @@
 # Everything for the notebook, training, tests and monitoring
 -r requirements.txt
 xgboost==3.4.1
-lightgbm==4.7.0
-scipy==1.18.1
-shap==0.54.1
+catboost==1.2.10
 lime==0.2.0.1
 seaborn==0.13.2
 mlflow>=3.5

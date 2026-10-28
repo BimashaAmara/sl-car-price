@@ -2,7 +2,7 @@
 
     python train.py
 
-* Uses the same cleaning (car_utils.load_and_clean) and the tuned CatBoost settings from the notebook (params.json).
+* Uses the same cleaning (car_utils.load_and_clean) and the tuned NGBoost settings from the notebook (params.json).
 * Logs parameters, metrics and the model to MLflow:
   DagsHub if DAGSHUB_OWNER / DAGSHUB_TOKEN / DAGSHUB_REPO are set, otherwise a local ./mlruns folder.
 * Quality gate: exits with an error if the test MAPE is above the limit, so CI fails instead of shipping a bad model.
@@ -16,11 +16,14 @@ import sys
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostRegressor
+from ngboost import NGBRegressor
+from ngboost.distns import Normal
+from scipy.stats import norm
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor
 
-from car_utils import CAT_FEATURES, fill_missing, fit_fill_stats, load_and_clean
+from car_utils import encode, fill_missing, fit_fill_stats, load_and_clean
 
 SEED = 42
 MAX_TEST_MAPE = 20.0  # quality gate
@@ -34,17 +37,26 @@ def main() -> int:
     train, test = train_test_split(df, test_size=0.2, random_state=SEED, stratify=pd.qcut(df["price"], 10, labels=False))
     stats = fit_fill_stats(train)
     X_train, X_test = fill_missing(train, stats), fill_missing(test, stats)
+    A_train, A_test = encode(X_train, stats), encode(X_test, stats)
 
-    model = CatBoostRegressor(**params, random_seed=SEED, verbose=0, allow_writing_files=False)
-    model.fit(X_train, np.log1p(train["price"]), cat_features=CAT_FEATURES)
-    pred = np.expm1(model.predict(X_test))
-    metrics = {"test_r2": r2_score(test["price"], pred),
-               "test_mape": 100 * mean_absolute_percentage_error(test["price"], pred),
+    base = DecisionTreeRegressor(max_depth=params["max_depth"], min_samples_leaf=params["min_samples_leaf"])
+    model = NGBRegressor(Dist=Normal, Base=base, n_estimators=params["n_estimators"],
+                         learning_rate=params["learning_rate"], minibatch_frac=params["minibatch_frac"],
+                         col_sample=params["col_sample"], random_state=SEED, verbose=False)
+    model.fit(A_train, np.log1p(train["price"].values))
+    dist = model.pred_dist(A_test)
+    mu, sigma = dist.params["loc"], dist.params["scale"] * params["sigma_scale"]
+    y, pred, z = test["price"].values, np.expm1(dist.params["loc"]), norm.ppf(0.9)
+    metrics = {"test_r2": r2_score(y, pred),
+               "test_mape": 100 * mean_absolute_percentage_error(y, pred),
+               "test_coverage80": float(np.mean((y >= np.expm1(mu - z * sigma)) & (y <= np.expm1(mu + z * sigma)))),
+               "test_nll": float(-np.mean(norm.logpdf(np.log1p(y), mu, sigma))),
                "train_rows": len(train), "test_rows": len(test)}
     print(json.dumps(metrics, indent=2))
 
-    bundle = {"model": model, "fill_stats": stats, "features": list(X_train.columns), "model_name": "CatBoost",
-              "test_mape": metrics["test_mape"], "test_r2": metrics["test_r2"],
+    bundle = {"model": model, "fill_stats": stats, "features": list(X_train.columns), "model_name": "NGBoost",
+              "test_mape": metrics["test_mape"], "test_r2": metrics["test_r2"], "coverage80": metrics["test_coverage80"],
+              "sigma_scale": params["sigma_scale"],
               "brand_models": train.groupby("brand")["model"].apply(lambda s: sorted(s.unique())).to_dict()}
     pickle.dump(bundle, open("model.pkl", "wb"))
     json.dump(metrics, open("metrics.json", "w"), indent=2)
@@ -58,7 +70,7 @@ def main() -> int:
         repo = os.getenv("DAGSHUB_REPO", "sl-car-price")
         mlflow.set_tracking_uri(f"https://dagshub.com/{os.environ['DAGSHUB_OWNER']}/{repo}.mlflow")
     mlflow.set_experiment("sl-car-price")
-    with mlflow.start_run(run_name="catboost-train"):
+    with mlflow.start_run(run_name="ngboost-train"):
         mlflow.log_params(params)
         mlflow.log_metrics({k: float(v) for k, v in metrics.items()})
         mlflow.log_artifact("model.pkl")

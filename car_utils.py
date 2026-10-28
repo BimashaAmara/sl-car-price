@@ -33,6 +33,15 @@ def fill_missing(df: pd.DataFrame, stats: dict) -> pd.DataFrame:
     return df
 
 
+def encode(df: pd.DataFrame, stats: dict) -> np.ndarray:
+    """Turn the text categories into integer codes (tree models split on these codes; no scaling is needed).
+    The code list comes from the training set; anything unseen becomes -1."""
+    df = df[FEATURES].copy()
+    for c in CAT_FEATURES:
+        df[c] = df[c].map({v: i for i, v in enumerate(stats["categories"][c])}).fillna(-1)
+    return df.astype(float).values
+
+
 def make_input_row(brand, model, year, engine_cc, gear, fuel, condition, mileage_km=None, listing_year=2026):
     """Turn what a user types into one row with the same columns the model was trained on."""
     reported = mileage_km is not None and mileage_km > 0

@@ -13,7 +13,7 @@ import numpy as np
 from evidently import DataDefinition, Dataset, Report
 from evidently.presets import DataDriftPreset
 
-from car_utils import CAT_FEATURES, FEATURES, NUM_FEATURES, fill_missing, load_and_clean
+from car_utils import CAT_FEATURES, FEATURES, NUM_FEATURES, encode, fill_missing, load_and_clean
 
 df = load_and_clean("cars.csv")
 reference = df[df["date"] < "2026-01-01"]
@@ -37,7 +37,7 @@ for label, part in [("2024-25", reference), ("2026", current)]:
 
 bundle = pickle.load(open("model.pkl", "rb"))
 for label, part in [("2024-25", reference), ("2026", current)]:
-    pred = np.expm1(bundle["model"].predict(fill_missing(part, bundle["fill_stats"])))
+    pred = np.expm1(bundle["model"].predict(encode(fill_missing(part, bundle["fill_stats"]), bundle["fill_stats"])))
     print(f"  model error (MAPE) on {label} listings: {100 * np.mean(np.abs(pred - part['price']) / part['price']):.1f}%")
 
 if summary["share"] >= 0.3:

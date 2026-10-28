@@ -1,7 +1,9 @@
 {
-  "iterations": 1099,
-  "learning_rate": 0.050132478040090245,
-  "depth": 7,
-  "l2_leaf_reg": 2.9967309097101573,
-  "bagging_temperature": 0.3998609717152555
+  "n_estimators": 1099,
+  "learning_rate": 0.029779591847062917,
+  "minibatch_frac": 0.6999304858576277,
+  "col_sample": 0.6092249700165663,
+  "max_depth": 6,
+  "min_samples_leaf": 15,
+  "sigma_scale": 1.2240034053711877
 }
